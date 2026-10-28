@@ -1,0 +1,29 @@
+name: "Artifactory CLI OIDC"
+on: [workflow_dispatch]
+
+permissions:
+  id-token: write
+  contents: read 
+
+jobs:
+  publish-artifact:
+    runs-on: cawe-linux-x64-general-small
+    env:
+      OIDC_PROVIDER: 'artifactory-atc-oidc'
+      OIDC_AUDIENCE: 'atc-github-user'
+      JF_URL: "https://packages.orbit.bmwgroup.net"
+    steps:
+      - name: Setup JFrog CLI
+        uses: jfrog/setup-jfrog-cli@v4
+        env:  
+          JF_URL: ${{ env.JF_URL }}
+        with:
+          oidc-provider-name: ${{ env.OIDC_PROVIDER }}
+          oidc-audience: ${{ env.OIDC_AUDIENCE }}
+          
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Upload Artifacts
+        run: |
+          jf rt u README.md orbit-spaceship-maven-local
