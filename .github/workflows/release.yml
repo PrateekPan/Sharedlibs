@@ -1,0 +1,72 @@
+name: Release & Sync Repositories
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+
+jobs:
+  release-please:
+    runs-on: cawe-linux-x64-general-small
+    outputs:
+      release_created: ${{ steps.release.outputs.release_created }}
+      tag_name: ${{ steps.latest_release.outputs.tag_name }}
+    steps:
+      - id: release
+        name: Release with release-please
+        uses: googleapis/release-please-action@v5
+        with:
+          release-type: simple
+
+      - name: Checkout Source Repository
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Get the latest release tag
+        id: latest_release
+        if: ${{ steps.release.outputs.release_created }}
+        uses: actions/github-script@v9
+        with:
+          script: |
+            const latestRelease = await github.rest.repos.getLatestRelease({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+            });
+            core.setOutput("tag_name", latestRelease.data.tag_name);
+
+      - name: Tag major version
+        id: update-major-tag
+        if: ${{ steps.release.outputs.release_created }}
+        uses: actions/publish-action@v0.4.0
+        with:
+          source-tag: ${{ steps.latest_release.outputs.tag_name }}
+
+  sync:
+    needs: release-please
+    if: ${{ startsWith(github.server_url, 'https://bmw.ghe.com') && (needs.release-please.outputs.release_created == 'true' || github.event_name == 'workflow_dispatch') }}
+    runs-on: cawe-linux-x64-general-small
+    steps:
+      - name: Checkout Source Repository
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: git-sync
+        env:
+          SOURCE_SSH_PRIVATE_KEY: ${{ secrets.SOURCE_SSH_PRIVATE_KEY }}
+        uses: orbit-actions/action-sync@v2
+        with:
+          destination_repo: "orbit-actions/${{ github.event.repository.name }}"
+          destination_branch: "main"
+          destination_github_domain: "atc-github.azure.cloud.bmw"
+          destination_github_token: ${{ secrets.ATC_GITHUB_TOKEN }}
+          destination_api_base: "https://atc-github.azure.cloud.bmw/api/v3"
+          source_github_token: ${{ secrets.GITHUB_TOKEN }}
+          source_tag: ${{ needs.release-please.outputs.tag_name }}
