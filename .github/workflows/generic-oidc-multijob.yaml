@@ -1,0 +1,44 @@
+name: "Artifactory Generic OIDC Multi-Job"
+on: [workflow_dispatch]
+env:
+  OIDC_PROVIDER: 'artifactory-atc-oidc'
+  OIDC_AUDIENCE: 'atc-github-user'
+  JF_URL: "https://packages.orbit.bmwgroup.net"
+permissions:
+  contents: read
+  id-token: write
+jobs:
+  publish-artifact:
+    runs-on: cawe-linux-x64-general-small
+    outputs:
+      access_token: ${{ steps.fetch_access_token.outputs.access-token }}
+    steps:
+      - name: Download Artifacts
+        uses: actions/checkout@v4
+
+      - name: Get Artifactory ACCESS TOKEN
+        id: fetch_access_token
+        uses: ./.github/actions/artifactory-oidc-generic
+        with:
+          oidc-provider-name: ${{ env.OIDC_PROVIDER }}
+          oidc-audience: ${{ env.OIDC_AUDIENCE }}
+          jf-url: ${{ env.JF_URL }}
+
+      - name: Deploy to artifactory
+        env:
+          JF_URL: ${{ env.JF_URL }}
+        run: |
+          curl -H "Authorization: Bearer ${{ steps.fetch_access_token.outputs.access-token }}" -T README.md "${JF_URL}/artifactory/orbit-spaceship-maven-local/"
+
+  download-artifact:
+    needs: [publish-artifact]
+    runs-on: cawe-linux-x64-general-small
+    steps:
+      - name: Download Artifacts
+        uses: actions/checkout@v4
+
+      - name: Deploy to artifactory
+        env:
+          JF_URL: ${{ env.JF_URL }}
+        run: |
+          curl -H "Authorization: Bearer ${{ needs.publish-artifact.outputs.access_token }}" -o README.md "${JF_URL}/artifactory/orbit-spaceship-maven-local/README.md"
