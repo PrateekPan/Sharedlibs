@@ -1,0 +1,46 @@
+name: 'Artifactory OIDC Integration'
+description: 'Action to fetch ACCESS TOKEN from Artifactory OIDC'
+inputs:
+  oidc-provider-name:
+    description: 'OIDC Provider Name'
+    required: true
+    default: 'artifactory-orbit-oidc'
+  oidc-audience:
+    description: 'OIDC Audience:'
+    required: true
+    default: 'orbit-github-user'
+  jf-url:
+    description: 'JFrog URL'
+    required: false
+    default: 'https://packages.orbit.bmwgroup.net'
+
+outputs:
+  access-token:
+    description: "Access Token for Artifactory Login"
+    value: ${{ steps.fetch_access_token.outputs.ACCESS_TOKEN }}
+
+runs:
+  using: "composite"
+  steps:
+    - name: Get GitHub ID Token
+      id: idtoken
+      env:
+        OIDC_AUDIENCE: ${{ inputs.oidc-audience }}
+      run: |
+        ID_TOKEN=$(curl -sLS -H "User-Agent: actions/oidc-client" -H "Authorization: Bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
+        "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=${OIDC_AUDIENCE}" | jq .value | tr -d '"')
+        echo "::add-mask::$ID_TOKEN"
+        echo "ID_TOKEN=${ID_TOKEN}" >> $GITHUB_OUTPUT
+      shell: bash
+      
+    - name: Fetch Access Token from Artifactory
+      id: fetch_access_token
+      env:
+        ID_TOKEN: ${{ steps.idtoken.outputs.ID_TOKEN }}
+        OIDC_PROVIDER_NAME: ${{ inputs.oidc-provider-name }}
+        JF_URL: ${{ inputs.jf-url }}
+      run: |
+        ACCESS_TOKEN=$(curl -X POST -H "Content-type: application/json" $JF_URL/access/api/v1/oidc/token -d "{\"grant_type\": \"urn:ietf:params:oauth:grant-type:token-exchange\", \"subject_token_type\":\"urn:ietf:params:oauth:token-type:id_token\", \"subject_token\": \"$ID_TOKEN\", \"provider_name\": \"$OIDC_PROVIDER_NAME\"}" | jq .access_token | tr -d '"')
+        echo "::add-mask::$ACCESS_TOKEN"
+        echo ACCESS_TOKEN=$ACCESS_TOKEN >> $GITHUB_OUTPUT
+      shell: bash
